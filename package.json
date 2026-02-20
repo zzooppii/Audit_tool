@@ -1,0 +1,31 @@
+{
+  "name": "audit-tool",
+  "version": "0.1.0",
+  "bin": {
+    "audit": "./bin/audit"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node bin/audit",
+    "dev": "ts-node src/cli/index.ts"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "dependencies": {
+    "commander": "^11.0.0",
+    "js-yaml": "^4.1.0",
+    "glob": "^10.3.0",
+    "minimatch": "^9.0.0",
+    "solidity-parser-antlr": "^0.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0",
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0"
+  }
+}

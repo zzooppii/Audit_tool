@@ -1,0 +1,30 @@
+version: "1.0"
+
+paths:
+  - "."
+
+exclude:
+  - "node_modules/**"
+  - "dist/**"
+  - "**/*.test.*"
+
+networks:
+  - ethereum
+
+rules:
+  solidity-tx-origin:
+    enabled: true
+    severity: critical
+  js-eval:
+    enabled: true
+    severity: high
+  js-child-process:
+    enabled: true
+    severity: high
+  python-exec:
+    enabled: true
+    severity: medium
+
+report:
+  format: console
+  output: "./reports/audit.md"
