@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { AuditConfig, Finding } from '../types';
-import { analyzeSolidityFile } from './solidityAst';
+import { getPlugins } from '../plugins/manager';
 
 type RuleDefinition = {
   id: string;
@@ -14,18 +14,6 @@ type RuleDefinition = {
 };
 
 const REGEX_RULES: RuleDefinition[] = [
-  // Solidity fallback (used only if AST parsing fails)
-  {
-    id: 'solidity-unchecked-external-call',
-    title: 'Possible unchecked external call (call.value)',
-    description:
-      'call.value style external calls are risky without proper handling.',
-    recommendation: 'Check return values and handle failures properly.',
-    severity: 'high',
-    regex: /\.call\.value\s*\(|\.call\s*{\s*value\s*:/g,
-    fileExtensions: ['.sol'],
-  },
-
   // JavaScript / TypeScript
   {
     id: 'js-eval',
@@ -106,11 +94,9 @@ function isRuleEnabled(
   if (override?.enabled === false) {
     return { enabled: false, severity: rule.severity };
   }
-
   if (override?.severity) {
     return { enabled: true, severity: override.severity as Finding['severity'] };
   }
-
   return { enabled: true, severity: rule.severity };
 }
 
@@ -122,26 +108,24 @@ export function generateFindings(
 
   const findings: Finding[] = [];
 
+  const plugins = getPlugins();
+  const pluginExtensions = new Set(
+    plugins.flatMap((plugin) => plugin.languages)
+  );
+
+  for (const plugin of plugins) {
+    const pluginFiles = files.filter((file) =>
+      plugin.languages.includes(path.extname(file))
+    );
+    if (pluginFiles.length > 0) {
+      findings.push(...plugin.detect(pluginFiles, config));
+    }
+  }
+
   for (const file of files) {
     const ext = path.extname(file);
 
-    // Solidity: AST-based analysis first
-    if (ext === '.sol') {
-      const astResult = analyzeSolidityFile(file, config);
-      findings.push(...astResult.findings);
-
-      // Fallback to regex rules if AST parsing failed
-      if (astResult.parseFailed) {
-        const content = readFileSafe(file);
-        if (content) {
-          findings.push(
-            ...applyRegexRules(content, file, ext, config, REGEX_RULES)
-          );
-        }
-      }
-
-      continue;
-    }
+    if (pluginExtensions.has(ext)) continue;
 
     const content = readFileSafe(file);
     if (!content) continue;
@@ -179,6 +163,7 @@ function applyRegexRules(
         location: { file, line },
         description: rule.description,
         recommendation: rule.recommendation,
+        snippet: getSnippet(content, line),
       });
     }
   }
@@ -186,80 +171,18 @@ function applyRegexRules(
   return results;
 }
 
-function readFileSafe(filePath: string): string | null {
-  try {
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return null;
-  }
-}  {
-    id: 'python-pickle',
-    title: 'pickle usage detected',
-    description: 'Untrusted pickle data can lead to code execution.',
-    recommendation: 'Avoid pickle for untrusted data.',
-    severity: 'high',
-    regex: /\bpickle\.loads?\b/g,
-    fileExtensions: ['.py'],
-  },
-];
-
-function getLineNumber(content: string, index: number): number {
-  return content.slice(0, index).split('\n').length;
-}
-
-function isRuleEnabled(
-  rule: RuleDefinition,
-  config?: AuditConfig
-): { enabled: boolean; severity: Finding['severity'] } {
-  const override = config?.rules?.[rule.id];
-  if (override?.enabled === false) {
-    return { enabled: false, severity: rule.severity };
-  }
-
-  if (override?.severity) {
-    return { enabled: true, severity: override.severity as Finding['severity'] };
-  }
-
-  return { enabled: true, severity: rule.severity };
-}
-
-export function generateFindings(
-  files: string[],
-  config?: AuditConfig
-): Finding[] {
-  if (files.length === 0) return [];
-
-  const findings: Finding[] = [];
-
-  for (const file of files) {
-    const ext = path.extname(file);
-    const content = readFileSafe(file);
-    if (!content) continue;
-
-    for (const rule of RULES) {
-      if (!rule.fileExtensions.includes(ext)) continue;
-
-      const { enabled, severity } = isRuleEnabled(rule, config);
-      if (!enabled) continue;
-
-      const matches = content.matchAll(rule.regex);
-      for (const match of matches) {
-        const index = match.index ?? 0;
-        const line = getLineNumber(content, index);
-
-        findings.push({
-          id: rule.id,
-          title: rule.title,
-          severity,
-          location: { file, line },
-          description: rule.description,
-          recommendation: rule.recommendation,
-        });
-      }
-    }
-  }
-
-  return findings;
+function getSnippet(
+  content: string,
+  line: number,
+  window = 2
+): string | undefined {
+  const lines = content.split('\n');
+  const start = Math.max(0, line - 1 - window);
+  const end = Math.min(lines.length - 1, line - 1 + window);
+  return lines
+    .slice(start, end + 1)
+    .map((text, idx) => `${start + idx + 1}: ${text}`)
+    .join('\n');
 }
 
 function readFileSafe(filePath: string): string | null {

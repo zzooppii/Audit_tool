@@ -8,7 +8,8 @@
     "build": "tsc",
     "prepare": "npm run build",
     "start": "node bin/audit",
-    "dev": "ts-node src/cli/index.ts"
+    "dev": "ts-node src/cli/index.ts",
+    "test": "ts-node tests/runTests.ts"
   },
   "files": [
     "dist",
@@ -19,10 +20,11 @@
     "js-yaml": "^4.1.0",
     "glob": "^10.3.0",
     "minimatch": "^9.0.0",
-    "solidity-parser-antlr": "^0.5.0"
+    "solidity-parser-antlr": "latest"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/js-yaml": "^4.0.0",
     "typescript": "^5.0.0",
     "ts-node": "^10.9.0",
     "eslint": "^8.0.0",

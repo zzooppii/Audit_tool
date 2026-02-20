@@ -1,6 +1,26 @@
 import fs from 'fs';
-import { parse, visit } from 'solidity-parser-antlr';
+import { parse } from 'solidity-parser-antlr';
 import { AuditConfig, Finding } from '../../types';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const visit = (ast: any, visitor: any) => {
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    if (node.type && visitor[node.type]) {
+      visitor[node.type](node);
+    }
+    for (const key of Object.keys(node)) {
+      if (key === 'loc' || key === 'range') continue;
+      const child = node[key];
+      if (Array.isArray(child)) {
+        child.forEach(walk);
+      } else if (typeof child === 'object') {
+        walk(child);
+      }
+    }
+  };
+  walk(ast);
+};
 
 type AstRule = {
   id: string;
@@ -15,8 +35,7 @@ const AST_RULES: AstRule[] = [
   {
     id: 'solidity-tx-origin',
     title: 'Use of tx.origin for authorization',
-    description:
-      'tx.origin can be spoofed via phishing contracts and is unsafe for auth.',
+    description: 'tx.origin can be spoofed via phishing contracts.',
     recommendation: 'Use msg.sender for access control.',
     severity: 'critical',
     check: (node) =>
@@ -27,8 +46,7 @@ const AST_RULES: AstRule[] = [
   {
     id: 'solidity-delegatecall',
     title: 'Use of delegatecall detected',
-    description:
-      'delegatecall can execute external code in the current context and is risky.',
+    description: 'delegatecall can execute external code in the current context.',
     recommendation: 'Avoid delegatecall or strictly control target address.',
     severity: 'high',
     check: (node) =>
@@ -37,8 +55,7 @@ const AST_RULES: AstRule[] = [
   {
     id: 'solidity-selfdestruct',
     title: 'Use of selfdestruct detected',
-    description:
-      'selfdestruct can permanently remove contract code and lead to fund loss.',
+    description: 'selfdestruct can permanently remove contract code.',
     recommendation: 'Avoid selfdestruct or restrict usage.',
     severity: 'high',
     check: (node) =>
@@ -49,9 +66,8 @@ const AST_RULES: AstRule[] = [
   {
     id: 'solidity-low-level-call',
     title: 'Low-level call detected',
-    description:
-      'Low-level call can be unsafe if return value is not checked.',
-    recommendation: 'Check return values and avoid low-level calls when possible.',
+    description: 'Low-level call can be unsafe if return value is not checked.',
+    recommendation: 'Check return values and avoid low-level calls.',
     severity: 'medium',
     check: (node) =>
       node.type === 'MemberAccess' &&
@@ -60,9 +76,8 @@ const AST_RULES: AstRule[] = [
   {
     id: 'solidity-send-transfer',
     title: 'Use of send()/transfer() detected',
-    description:
-      'send/transfer can fail due to gas limitations and may be unsafe.',
-    recommendation: 'Prefer call with proper checks and error handling.',
+    description: 'send/transfer can fail due to gas limitations.',
+    recommendation: 'Prefer call with proper checks.',
     severity: 'low',
     check: (node) =>
       node.type === 'MemberAccess' &&
@@ -71,9 +86,8 @@ const AST_RULES: AstRule[] = [
   {
     id: 'solidity-block-timestamp',
     title: 'Use of block.timestamp detected',
-    description:
-      'block.timestamp can be manipulated by miners within a range.',
-    recommendation: 'Avoid using block.timestamp for critical randomness/logic.',
+    description: 'block.timestamp can be manipulated by miners.',
+    recommendation: 'Avoid using block.timestamp for critical logic.',
     severity: 'medium',
     check: (node) =>
       (node.type === 'MemberAccess' &&
@@ -84,8 +98,7 @@ const AST_RULES: AstRule[] = [
   {
     id: 'solidity-blockhash-randomness',
     title: 'Use of blockhash for randomness detected',
-    description:
-      'blockhash is predictable and unsafe for randomness.',
+    description: 'blockhash is predictable and unsafe for randomness.',
     recommendation: 'Use secure randomness (e.g., VRF).',
     severity: 'medium',
     check: (node) =>
@@ -105,27 +118,22 @@ const FUNCTION_RULES = {
   reentrancy: {
     id: 'solidity-reentrancy',
     title: 'Potential reentrancy (external call before state change)',
-    description:
-      'External call occurs before a state update, which can enable reentrancy.',
-    recommendation:
-      'Apply checks-effects-interactions pattern or use reentrancy guards.',
+    description: 'External call occurs before a state update.',
+    recommendation: 'Apply checks-effects-interactions pattern.',
     severity: 'high' as const,
   },
   uncheckedReturn: {
     id: 'solidity-unchecked-return',
     title: 'Unchecked low-level call return value',
-    description:
-      'Low-level calls return a success flag which should be checked.',
+    description: 'Low-level calls return a success flag which should be checked.',
     recommendation: 'Check return values for low-level calls.',
     severity: 'medium' as const,
   },
   accessControl: {
     id: 'solidity-access-control',
     title: 'Missing access control on state-changing function',
-    description:
-      'Public/external function changes state without owner/admin restriction.',
-    recommendation:
-      'Add access control (e.g., onlyOwner/onlyRole) to state-changing functions.',
+    description: 'Public function changes state without owner restriction.',
+    recommendation: 'Add access control (e.g., onlyOwner).',
     severity: 'high' as const,
   },
 };
@@ -193,6 +201,7 @@ function isStateVarIdentifier(node: any, stateVars: Set<string>): boolean {
 }
 
 function statementHasExternalCall(statement: any): boolean {
+  if (!statement) return false;
   let found = false;
   visit(statement, {
     FunctionCall: (node: any) => {
@@ -205,6 +214,7 @@ function statementHasExternalCall(statement: any): boolean {
 }
 
 function statementHasStateWrite(statement: any, stateVars: Set<string>): boolean {
+  if (!statement) return false;
   let found = false;
   visit(statement, {
     Assignment: (node: any) => {
@@ -254,7 +264,6 @@ function analyzeFunctionRules(
   const findings: Finding[] = [];
   const stateVars = collectStateVariables(ast);
 
-  // Collect function definitions
   const functions = new Map<string, any>();
   visit(ast, {
     FunctionDefinition: (node: any) => {
@@ -262,7 +271,6 @@ function analyzeFunctionRules(
     },
   });
 
-  // Function summaries: direct external call and state write
   const summaries = new Map<
     string,
     { hasExternalCall: boolean; hasStateWrite: boolean }
@@ -275,7 +283,6 @@ function analyzeFunctionRules(
     });
   }
 
-  // Propagate external call info through internal function calls
   let changed = true;
   while (changed) {
     changed = false;
@@ -295,17 +302,14 @@ function analyzeFunctionRules(
     }
   }
 
-  // Analyze each function
   visit(ast, {
     FunctionDefinition: (node: any) => {
       if (!node.body) return;
 
       const visibility = node.visibility;
-      const isPublic =
-        visibility === 'public' || visibility === 'external';
+      const isPublic = visibility === 'public' || visibility === 'external';
       const isConstructor = node.isConstructor === true;
 
-      // Access control rule
       if (isPublic && !isConstructor && functionWritesState(node, stateVars)) {
         if (!functionHasAllowedModifier(node, config)) {
           const rule = FUNCTION_RULES.accessControl;
@@ -325,7 +329,6 @@ function analyzeFunctionRules(
         }
       }
 
-      // Reentrancy + unchecked return
       let seenExternalCall = false;
       const statements = node.body?.statements || [];
 
@@ -337,7 +340,6 @@ function analyzeFunctionRules(
         if (hasExternalCall) {
           seenExternalCall = true;
 
-          // Unchecked return: low-level call used as expression statement
           if (
             statement.type === 'ExpressionStatement' &&
             isExternalCallNode(statement.expression)
@@ -421,11 +423,19 @@ function statementCallsExternalFunction(
   return found;
 }
 
-function getSnippet(content: string | undefined, line: number): string | undefined {
+function getSnippet(
+  content: string | undefined,
+  line: number,
+  window = 2
+): string | undefined {
   if (!content) return undefined;
   const lines = content.split('\n');
-  const target = lines[line - 1];
-  return target ? target.trim() : undefined;
+  const start = Math.max(0, line - 1 - window);
+  const end = Math.min(lines.length - 1, line - 1 + window);
+  return lines
+    .slice(start, end + 1)
+    .map((text, idx) => `${start + idx + 1}: ${text}`)
+    .join('\n');
 }
 
 export function analyzeSolidityFile(
@@ -444,25 +454,24 @@ export function analyzeSolidityFile(
     return { findings, parseFailed: true };
   }
 
-  visit(ast, {
-    enter: (node: any) => {
-      for (const rule of AST_RULES) {
-        const { enabled, severity } = resolveRule(rule, config);
-        if (!enabled) continue;
+  visit(ast, (node: any) => {
+    for (const rule of AST_RULES) {
+      const { enabled, severity } = resolveRule(rule, config);
+      if (!enabled) continue;
 
-        if (rule.check(node)) {
-          const line = node.loc?.start?.line ?? 1;
-          findings.push({
-            id: rule.id,
-            title: rule.title,
-            severity,
-            location: { file: filePath, line },
-            description: rule.description,
-            recommendation: rule.recommendation,
-          });
-        }
+      if (rule.check(node)) {
+        const line = node.loc?.start?.line ?? 1;
+        findings.push({
+          id: rule.id,
+          title: rule.title,
+          severity,
+          location: { file: filePath, line },
+          description: rule.description,
+          recommendation: rule.recommendation,
+          snippet: getSnippet(content, line),
+        });
       }
-    },
+    }
   });
 
   findings.push(...analyzeFunctionRules(ast, filePath, config, content));

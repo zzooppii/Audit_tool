@@ -4,7 +4,7 @@ export interface AuditConfig {
   exclude?: string[];
   networks?: string[];
   rules?: Record<string, { enabled: boolean; severity: string }>;
-  report?: { format: 'markdown' | 'json' | 'console'; output?: string };
+  report?: { format?: 'markdown' | 'json' | 'console'; output?: string };
   accessControl?: {
     modifiers?: string[];
   };

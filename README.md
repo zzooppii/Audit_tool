@@ -138,7 +138,7 @@ report:
 
 - 총 Finding 수
 - 심각도별 개수 (Critical/High/Medium/Low/Info)
-- **탐지된 코드 스니펫**
+- **탐지된 코드 스니펫 (기본 전/후 2줄 포함)**
 
 예시:
 ```
@@ -148,6 +148,15 @@ report:
 
 ---
 
+## ✅ 플러그인 구조
+
+언어별 분석기는 플러그인으로 분리되어 있습니다:
+- Solidity: AST 기반 분석 + REGEX 폴백
+- JavaScript/TypeScript: REGEX 기반 패턴 탐지
+- Python: REGEX 기반 패턴 탐지
+
+새로운 언어/룰 추가는 `src/plugins/`에 플러그인 추가만으로 가능합니다.
+
+
 ## 📄 문서
 더 자세한 설계 문서는 `docs/` 폴더를 참고하세요.
-```
